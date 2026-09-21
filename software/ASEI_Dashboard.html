@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASEI | Edge Broker Dashboard</title>
+    <!-- Tailwind CSS for rapid UI styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { transition: background-color 2s ease-in-out; }
+        .glass-panel { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(10px); }
+    </style>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col font-sans" id="app-body">
+
+    <!-- Header -->
+    <header class="p-6 border-b border-gray-700 flex justify-between items-center glass-panel">
+        <div>
+            <h1 class="text-3xl font-bold tracking-widest text-teal-400">ASEI <span class="text-sm text-gray-400">v1.0 MVP</span></h1>
+            <p class="text-xs text-gray-400 mt-1">Adaptive Somato-Environmental Interface</p>
+        </div>
+        <button id="connectBtn" class="bg-teal-600 hover:bg-teal-500 text-white font-bold py-2 px-4 rounded transition">
+            Connect Hardware (Web Serial)
+        </button>
+    </header>
+
+    <!-- Main Dashboard -->
+    <main class="flex-grow p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+        
+        <!-- Left Column: Biometrics -->
+        <div class="glass-panel p-6 rounded-xl border border-gray-700 flex flex-col justify-center">
+            <h2 class="text-xl font-semibold mb-4 text-gray-300">Autonomic Telemetry (Input)</h2>
+            <div class="space-y-4">
+                <div class="bg-gray-800 p-4 rounded-lg">
+                    <p class="text-sm text-gray-400">Heart Rate Variability (RMSSD)</p>
+                    <p id="hrv-display" class="text-4xl font-mono text-teal-300">-- ms</p>
+                </div>
+                <div class="bg-gray-800 p-4 rounded-lg">
+                    <p class="text-sm text-gray-400">Electrodermal Activity (EDA)</p>
+                    <p id="eda-display" class="text-4xl font-mono text-teal-300">-- SCL</p>
+                </div>
+                <p id="status-log" class="text-xs text-gray-500 font-mono mt-4">Waiting for hardware swipe...</p>
+            </div>
+        </div>
+
+        <!-- Right Column: Environmental Actuation -->
+        <div class="glass-panel p-6 rounded-xl border border-gray-700 flex flex-col justify-center">
+            <h2 class="text-xl font-semibold mb-4 text-gray-300">Spatial Actuation (Output)</h2>
+            <div class="space-y-4">
+                <div class="bg-gray-800 p-4 rounded-lg">
+                    <p class="text-sm text-gray-400">Generated Scene</p>
+                    <p id="scene-display" class="text-2xl font-bold text-white">Neutral Architecture</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-gray-800 p-4 rounded-lg">
+                        <p class="text-sm text-gray-400">Microclimate Fan</p>
+                        <p id="fan-display" class="text-xl font-mono text-blue-400">0%</p>
+                    </div>
+                    <div class="bg-gray-800 p-4 rounded-lg">
+                        <p class="text-sm text-gray-400">Digital Olfaction</p>
+                        <p id="scent-display" class="text-xl font-mono text-purple-400">None</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- CONFIGURATION ---
+        // INSERT YOUR GEMINI API KEY HERE FOR THE DEMO
+        const GEMINI_API_KEY = "YOUR_GEMINI_1.5_FLASH_API_KEY"; 
+        const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+        let port;
+        let writer;
+
+        const connectBtn = document.getElementById('connectBtn');
+        const statusLog = document.getElementById('status-log');
+        
+        // Connect to Arduino via Web Serial API
+        connectBtn.addEventListener('click', async () => {
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                writer = port.writable.getWriter();
+                connectBtn.textContent = "Hardware Connected";
+                connectBtn.classList.replace('bg-teal-600', 'bg-green-600');
+                statusLog.textContent = "Listening to USB Serial...";
+                readSerialLoop();
+            } catch (err) {
+                console.error("Serial connection failed:", err);
+                statusLog.textContent = "Error: " + err.message;
+            }
+        });
+
+        // Read incoming data from Arduino
+        async function readSerialLoop() {
+            const reader = port.readable.getReader();
+            let incomingData = "";
+            
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) { reader.releaseLock(); break; }
+                
+                incomingData += new TextDecoder().decode(value);
+                
+                // Parse complete lines
+                if (incomingData.includes('\n')) {
+                    const lines = incomingData.split('\n');
+                    incomingData = lines.pop(); // keep the incomplete part
+                    
+                    for (const line of lines) {
+                        if (line.trim().startsWith('{')) {
+                            handleBiometricPayload(line.trim());
+                        }
+                    }
+                }
+            }
+        }
+
+        async function handleBiometricPayload(jsonString) {
+            try {
+                const data = JSON.parse(jsonString);
+                document.getElementById('hrv-display').textContent = `${data.hrv} ms`;
+                document.getElementById('eda-display').textContent = `${data.eda} SCL`;
+                statusLog.textContent = "Payload received. Querying Affective Engine...";
+                
+                await queryAffectiveEngine(data);
+            } catch (e) {
+                console.error("Invalid JSON from hardware:", e);
+            }
+        }
+
+        async function queryAffectiveEngine(bioData) {
+            const prompt = `
+                You are the ASEI Affective Engine. Map these biometrics to an environmental actuation recipe.
+                Input: HRV=${bioData.hrv}ms, EDA=${bioData.eda}.
+                Rules: 
+                - If HRV < 20 and EDA > 12: Acute Panic. Scene: "Deep Misty Glade", Color: "#1e293b", Fan: 20, Scent: "Linalool".
+                - If HRV 45-65 and EDA 3-6: Focus. Scene: "Sunlit Bamboo", Color: "#064e3b", Fan: 50, Scent: "Pinene".
+                - Default to "Golden Hour Meadow", Color: "#78350f", Fan: 10, Scent: "Sandalwood".
+                
+                Output ONLY valid JSON with keys: "scene", "color", "fan", "scent".
+            `;
+
+            try {
+                const response = await fetch(GEMINI_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }]
+                    })
+                });
+
+                const result = await response.json();
+                const rawText = result.candidates[0].content.parts[0].text;
+                const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                const actuationRecipe = JSON.parse(cleanJson);
+
+                applyActuation(actuationRecipe);
+
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                statusLog.textContent = "AI Orchestration Failed.";
+            }
+        }
+
+        async function applyActuation(recipe) {
+            // Update UI
+            document.getElementById('app-body').style.backgroundColor = recipe.color;
+            document.getElementById('scene-display').textContent = recipe.scene;
+            document.getElementById('fan-display').textContent = `${recipe.fan}%`;
+            document.getElementById('scent-display').textContent = recipe.scent;
+            statusLog.textContent = "Actuation applied.";
+
+            // Send command back to Arduino
+            if (writer) {
+                const command = `F${recipe.fan}\n`;
+                const data = new TextEncoder().encode(command);
+                await writer.write(data);
+            }
+        }
+    </script>
+</body>
+</html>
