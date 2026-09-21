@@ -2,7 +2,7 @@
 
 [![Build in Public](https://img.shields.io/badge/Status-Build_in_Public-success)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[![ASEI Concept Art](./assets/concept_art.png)](./assets/concept_video.mp4)
+[![ASEI Concept Art](./assets/concept_art.jpeg)](./assets/concept_video.mp4)
 *Click the concept art above to watch the full cinematic `concept_video.mp4`.*
 
 ASEI transforms physical architecture into a "Living Somatic Sanctuary". By reading autonomic nervous system metrics via everyday touchpoints (like a smart mug) or subdermal telemetry, ASEI dynamically morphs a room's visuals, acoustics, microclimate, and digital olfaction to passively restore human physiological homeostasis.
