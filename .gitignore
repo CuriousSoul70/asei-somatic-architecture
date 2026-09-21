@@ -1,0 +1,20 @@
+# Node & Web
+node_modules/
+.env
+.DS_Store
+
+# Arduino / PlatformIO
+.pio/
+*.hex
+*.elf
+*.bin
+
+# C++ Build files
+build/
+*.o
+*.out
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
